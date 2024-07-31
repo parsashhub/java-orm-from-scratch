@@ -79,8 +79,8 @@ docker container run -d -p 3306:3306 --name mySql -e MYSQL_ROOT_PASSWORD=123456 
 
 1. **Clone the repository**:
     ```bash
-    git clone <repository-url>
-    cd simple-jpa-like-orm
+    git clone https://github.com/parsashhub/java-orm-from-scratch.git
+    cd java-orm-from-scratch
     ```
 
 2. **Configure MySQL Database**:
