@@ -1,5 +1,4 @@
 package org.example;
-
 // marks this class as an entity and maps it to the "customer" table in db.
 @Entity(tableName = "customer")
 public class Customer {

@@ -1,12 +1,14 @@
 package org.example;
 
 
+import org.apache.commons.dbcp2.BasicDataSource;
+
 import java.sql.*;
 
 public class Main {
     public static void main(String[] args) {
-        String url = "jdbc:mysql://localhost:3306/test";
-        try (Connection conn = DriverManager.getConnection(url, "root", "123456")) {
+        BasicDataSource dataSource = DataSourceConfig.createDataSource();
+        try (Connection conn = dataSource.getConnection()) {
             EntityManager<Customer> dbSchema = new EntityManager<>(conn);
 
             dbSchema.createTable(Customer.class);
