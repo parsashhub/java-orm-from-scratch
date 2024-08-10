@@ -7,6 +7,7 @@ API). The goal is to provide a basic understanding of how ORM systems work by cr
 records using custom annotations and reflection.
 
 ## simplified version of a basic ORM-like system in java (jpa & jdbc):
+
 1. define entity classes: entity classes with annotations to map them to database tables.
 2. create an EntityManager: implement an EntityManager class to handle persistence operations.
 3. create a Configuration Class: manage database connections and configurations.
@@ -15,19 +16,25 @@ records using custom annotations and reflection.
 ## annotations:
 
 1. **@Retention**:
-specifies how long annotations with this type are to be retained. It has a single value which is one of the constants from the java.lang.annotation.RetentionPolicy enum
-  -  RetentionPolicy.SOURCE: annotations are discarded by the compiler.
-  -  RetentionPolicy.CLASS: annotations are recorded in the class file but are not retained by the JVM at runtime.(default behavior)
-  -  RetentionPolicy.RUNTIME: annotations are recorded in the class file and retained by the JVM at runtime, so they can be read reflectively.
+   specifies how long annotations with this type are to be retained. It has a single value which is one of the constants
+   from the java.lang.annotation.RetentionPolicy enum
 
- 2. **@Target**:
-specifies the kinds of program elements to which an annotation type is applicable. It has a single value which is an array of java.lang.annotation.ElementType constants.
-  - ElementType.TYPE: applicable to any element of a class (e.g., class, interface, enum).
-  - ElementType.FIELD: applicable to fields or properties.
-  - ElementType.METHOD: applicable to methods.
-  - ElementType.PARAMETER: applicable to the parameters of a method.
-  - ElementType.CONSTRUCTOR: applicable to constructors.
-  - ElementType.LOCAL_VARIABLE: applicable to local variables.
+- RetentionPolicy.SOURCE: annotations are discarded by the compiler.
+- RetentionPolicy.CLASS: annotations are recorded in the class file but are not retained by the JVM at runtime.(default
+  behavior)
+- RetentionPolicy.RUNTIME: annotations are recorded in the class file and retained by the JVM at runtime, so they can be
+  read reflectively.
+
+2. **@Target**:
+   specifies the kinds of program elements to which an annotation type is applicable. It has a single value which is an
+   array of java.lang.annotation.ElementType constants.
+
+- ElementType.TYPE: applicable to any element of a class (e.g., class, interface, enum).
+- ElementType.FIELD: applicable to fields or properties.
+- ElementType.METHOD: applicable to methods.
+- ElementType.PARAMETER: applicable to the parameters of a method.
+- ElementType.CONSTRUCTOR: applicable to constructors.
+- ElementType.LOCAL_VARIABLE: applicable to local variables.
 
 ## Features
 
@@ -40,6 +47,9 @@ specifies the kinds of program elements to which an annotation type is applicabl
 - **Table Management**:
     - Create new tables (`createTable`)
     - Alter existing tables by adding new columns (`addColumn`)
+- **Transaction Management**:
+    - Basic transaction handling
+    - Support for transactions with savepoints
 
 ## Project Structure
 
@@ -72,9 +82,11 @@ src/
 - **Java Development Kit (JDK)**: Make sure you have JDK installed.
 - **MySQL Database**: The example assumes a MySQL database running on `localhost:3306` with a database named `test`.
 - you can install mysql with the following command using docker:
+
 ```bash 
 docker container run -d -p 3306:3306 --name mySql -e MYSQL_ROOT_PASSWORD=123456 mysql
 ```
+
 ### Setup
 
 1. **Clone the repository**:
@@ -85,12 +97,13 @@ docker container run -d -p 3306:3306 --name mySql -e MYSQL_ROOT_PASSWORD=123456 
 
 2. **Configure MySQL Database**:
     - Ensure you have a MySQL database named `test`.
-    - Update the `Main.java` file with your MySQL credentials if needed:
-        ```java
-        String url = "jdbc:mysql://localhost:3306/test";
-        String username = "root";
-        String password = "123456";
+    - Update the `applications.properties` file with your MySQL credentials if needed:
         ```
+        db.url=jdbc:mysql://localhost:3306/test
+        db.username=root
+        db.password=123456
+        db.driver=com.mysql.cj.jdbc.Driver
+         ```
 
 3. **Compile and Run**:
     - Compile the project:
