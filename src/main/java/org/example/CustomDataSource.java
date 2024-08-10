@@ -20,19 +20,20 @@ public class CustomDataSource implements DataSource {
     private PrintWriter logWriter;
     private int loginTimeout;
     private LinkedList<Connection> connectionPool;
-    private int maxPoolSize = 5;
+    private int maxPoolSize = 5; // Maximum number of connections in the pool
 
     public CustomDataSource() {
-        loadProperties();
-        // ensuring that the JDBC driver class is loaded into the Java application’s memory.
+        loadProperties(); // Load database connection properties
+        // Ensure the JDBC driver class is loaded
         try {
             Class.forName(driver);
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Failed to load JDBC driver", e);
         }
-        initializeConnectionPool();
+        initializeConnectionPool(); // Initialize the connection pool
     }
 
+    // Load database connection properties from a properties file
     private void loadProperties() {
         Properties props = new Properties();
         try (FileInputStream fis = new FileInputStream("src/main/resources/applications.properties")) {
@@ -46,13 +47,15 @@ public class CustomDataSource implements DataSource {
         }
     }
 
+    // Initialize the connection pool with a set number of connections
     private void initializeConnectionPool() {
         connectionPool = new LinkedList<>();
         for (int i = 0; i < maxPoolSize; i++) {
-            connectionPool.add(createNewConnection());
+            connectionPool.add(createNewConnection()); // Create and add new connections to the pool
         }
     }
 
+    // Create a new database connection
     private Connection createNewConnection() {
         try {
             return DriverManager.getConnection(url, username, password);
@@ -61,32 +64,32 @@ public class CustomDataSource implements DataSource {
         }
     }
 
+    // Get a connection from the pool
     @Override
     public synchronized Connection getConnection() throws SQLException {
         if (connectionPool.isEmpty()) {
-            if (connectionPool.size() < maxPoolSize)
+            if (connectionPool.size() < maxPoolSize) {
+                // Add a new connection if the pool size is below the maximum
                 connectionPool.add(createNewConnection());
-            else
+            } else {
                 throw new SQLException("Maximum pool size reached, no available connections!");
-
+            }
         }
-        // retrieves and removes the head (the first element) of the LinkedList,
-        // returning null if the LinkedList is empty
+        // Retrieve and remove the head (the first element) of the LinkedList
         return connectionPool.poll();
     }
 
+    // Get a connection with specific username and password
     @Override
     public synchronized Connection getConnection(String username, String password) throws SQLException {
         return DriverManager.getConnection(url, username, password);
     }
 
+    // Return a connection back to the pool
     public synchronized void returnConnection(Connection connection) {
         try {
             if (connection != null && !connection.isClosed()) {
-                // adds the specified element to the LinkedList.
-                // returns true if the element was added successfully,
-                // and false if the element could not be added.
-                // though in the case of LinkedList, offer() always returns true because the list can grow dynamically
+                // Add the connection back to the pool
                 connectionPool.offer(connection);
             }
         } catch (SQLException e) {
@@ -94,42 +97,47 @@ public class CustomDataSource implements DataSource {
         }
     }
 
+    // Get the log writer for this DataSource
     @Override
     public PrintWriter getLogWriter() throws SQLException {
         return logWriter;
     }
 
+    // Set the log writer for this DataSource
     @Override
     public void setLogWriter(PrintWriter out) throws SQLException {
         this.logWriter = out;
     }
 
+    // Set the login timeout value
     @Override
     public void setLoginTimeout(int seconds) throws SQLException {
         this.loginTimeout = seconds;
     }
 
+    // Get the login timeout value
     @Override
     public int getLoginTimeout() throws SQLException {
         return loginTimeout;
     }
 
+    // Get the parent logger for this DataSource
     @Override
     public Logger getParentLogger() throws SQLFeatureNotSupportedException {
-        return null;
+        return null; // SQLFeatureNotSupportedException is thrown if not supported
     }
 
-    // wrapper (unwrap, isWrapperFor): handle flexible type handling.
-    // check if the DataSource can be unwrapped to a particular class.
+    // Check if this DataSource can be unwrapped to a specific class
     @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
-        if (iface.isInstance(this))
-            return iface.cast(this);
-        else
+        if (iface.isInstance(this)) {
+            return iface.cast(this); // Return this DataSource cast to the specified class
+        } else {
             throw new SQLException("The DataSource is not a wrapper for " + iface.getName());
-
+        }
     }
 
+    // Check if this DataSource is a wrapper for a specific class
     @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         return iface.isInstance(this);
