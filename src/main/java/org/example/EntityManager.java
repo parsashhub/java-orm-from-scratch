@@ -219,4 +219,105 @@ public class EntityManager<T> {
         }
         System.out.println("...\ntable " + entityClass.getSimpleName() + " altered successfully:)");
     }
+
+    public void selectAndPrintAll(Class<T> entityClass) throws Exception {
+        if (!entityClass.isAnnotationPresent(Entity.class))
+            throw new RuntimeException("not an entity class");
+
+
+        Entity entityAnnotation = entityClass.getAnnotation(Entity.class);
+        String tableName = entityAnnotation.tableName();
+        String sql = "SELECT * FROM " + tableName;
+
+        System.out.println("\nSelecting and printing all records from " + tableName + " table");
+
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            // Print column names
+            ResultSetMetaData rsmd = rs.getMetaData();
+            int columnCount = rsmd.getColumnCount();
+            for (int i = 1; i <= columnCount; i++) {
+                System.out.print(rsmd.getColumnName(i) + "\t");
+            }
+            System.out.println();
+
+            // Print each row
+            while (rs.next()) {
+                for (int i = 1; i <= columnCount; i++) {
+                    System.out.print(rs.getString(i) + "\t");
+                }
+                System.out.println();
+            }
+        }
+    }
+
+    public void executeInTransaction(TransactionCallback<T> callback) {
+        try {
+            connection.setAutoCommit(false);
+            callback.doInTransaction(this); // Execute callback
+            connection.commit(); // Commit transaction
+            System.out.println("Transaction committed successfully");
+        } catch (Exception e) {
+            try {
+                connection.rollback(); // Rollback transaction on error
+                System.out.println("Transaction rolled back due to error: " + e.getMessage());
+            } catch (SQLException rollbackException) {
+                rollbackException.printStackTrace();
+            }
+        } finally {
+            try {
+                connection.setAutoCommit(true); // Reset auto-commit to true
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void executeInTransactionWithSavepoints(TransactionCallback<T> callback) {
+        Savepoint savepoint = null;
+
+        try {
+            connection.setAutoCommit(false); // Start transaction
+
+            callback.doInTransaction(this);
+
+            connection.commit();
+            System.out.println("Transaction committed successfully");
+
+        } catch (Exception e) {
+            try {
+                if (savepoint != null) {
+                    connection.rollback(savepoint);
+                    System.out.println("Rolled back to savepoint due to error: " + e.getMessage());
+                } else {
+                    connection.rollback();
+                    System.out.println("Transaction rolled back due to error: " + e.getMessage());
+                }
+            } catch (SQLException rollbackException) {
+                rollbackException.printStackTrace();
+            }
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public Savepoint setSavepoint(String savepointName) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint(savepointName);
+        System.out.println("savepoint '" + savepointName + "' set.");
+        return savepoint;
+    }
+
+    public void releaseSavepoint(Savepoint savepoint) throws SQLException {
+        connection.releaseSavepoint(savepoint);
+        System.out.println("savepoint released.");
+    }
+
+    public void rollback(Savepoint savepoint) throws SQLException {
+        connection.rollback(savepoint);
+    }
 }
