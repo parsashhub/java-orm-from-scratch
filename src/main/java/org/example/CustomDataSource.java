@@ -8,8 +8,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
-import java.util.LinkedList;
 import java.util.Properties;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.logging.Logger;
 
 public class CustomDataSource implements DataSource {
@@ -19,8 +20,9 @@ public class CustomDataSource implements DataSource {
     private String driver;
     private PrintWriter logWriter;
     private int loginTimeout;
-    private LinkedList<Connection> connectionPool;
-    private int maxPoolSize = 5; // Maximum number of connections in the pool
+    private final int maxPoolSize = 5; // Maximum number of connections in the pool
+    // a type of queue in Java that is thread-safe
+    public BlockingQueue<Connection> connectionPool = new ArrayBlockingQueue<>(maxPoolSize);
 
     public CustomDataSource() {
         loadProperties(); // Load database connection properties
@@ -49,10 +51,9 @@ public class CustomDataSource implements DataSource {
 
     // Initialize the connection pool with a set number of connections
     private void initializeConnectionPool() {
-        connectionPool = new LinkedList<>();
-        for (int i = 0; i < maxPoolSize; i++) {
+        for (int i = 0; i < maxPoolSize; i++)
             connectionPool.add(createNewConnection()); // Create and add new connections to the pool
-        }
+
     }
 
     // Create a new database connection
@@ -67,16 +68,17 @@ public class CustomDataSource implements DataSource {
     // Get a connection from the pool
     @Override
     public synchronized Connection getConnection() throws SQLException {
-        if (connectionPool.isEmpty()) {
-            if (connectionPool.size() < maxPoolSize) {
-                // Add a new connection if the pool size is below the maximum
-                connectionPool.add(createNewConnection());
-            } else {
-                throw new SQLException("Maximum pool size reached, no available connections!");
-            }
+        Connection connection = null;
+        try {
+            connection = connectionPool.take();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
-        // Retrieve and remove the head (the first element) of the LinkedList
-        return connectionPool.poll();
+        if (isValid(connection))
+            return connection;
+        else
+            return createNewConnection();
+
     }
 
     // Get a connection with specific username and password
@@ -85,15 +87,21 @@ public class CustomDataSource implements DataSource {
         return DriverManager.getConnection(url, username, password);
     }
 
-    // Return a connection back to the pool
-    public synchronized void returnConnection(Connection connection) {
+    public void returnConnection(Connection connection) throws InterruptedException {
+        connectionPool.offer(connection);
+    }
+
+    public void closeAllConnections() throws SQLException {
+        for (Connection connection : connectionPool) {
+            connection.close();
+        }
+    }
+
+    private boolean isValid(Connection connection) {
         try {
-            if (connection != null && !connection.isClosed()) {
-                // Add the connection back to the pool
-                connectionPool.offer(connection);
-            }
+            return !connection.isClosed() && connection.isValid(2);
         } catch (SQLException e) {
-            e.printStackTrace();
+            return false;
         }
     }
 
@@ -142,4 +150,5 @@ public class CustomDataSource implements DataSource {
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         return iface.isInstance(this);
     }
+
 }
