@@ -6,12 +6,10 @@ import java.sql.*;
 public class Main {
     public static void main(String[] args) {
         var dataSource = new CustomDataSource();
-        Connection conn = null;
-
+        Cache<Integer, Customer> customCache = new CustomCache<>();
         try {
-            conn = dataSource.getConnection();
-            EntityManager<Customer> customerEntityManager = new EntityManager<>(conn);
-            EntityManager<User> userEntityManager = new EntityManager<>(conn);
+            EntityManager<Customer> customerEntityManager = new EntityManager<>(dataSource, customCache);
+            EntityManager<User> userEntityManager = new EntityManager<>(dataSource, null);
 
             // create a user table
             userEntityManager.createTable(User.class);
@@ -19,6 +17,9 @@ public class Main {
             customerEntityManager.createTable(Customer.class);
             // alter table
             // dbSchema.addColumn(Customer.class, "email", "VARCHAR(255)");
+
+            // select and print all records
+            customerEntityManager.selectAndPrintAll(Customer.class);
 
             // transaction
             customerEntityManager.executeInTransaction(entityManager -> {
@@ -36,14 +37,15 @@ public class Main {
 
             // transaction using save points
             customerEntityManager.executeInTransactionWithSavepoints(entityManager -> {
-                // Set a savepoint before making changes
-                Savepoint savepoint = entityManager.setSavepoint("MySavepoint");
-
+                Savepoint savepoint = null;
                 try {
                     Customer customer = new Customer();
                     customer.setFirstName("john");
                     customer.setLastName("doe");
                     entityManager.insert(customer);
+
+                    // Set a savepoint after adding customer
+                    savepoint = entityManager.setSavepoint("MySavepoint");
 
                     Customer existingCustomer = entityManager.find(Customer.class, 1);
                     if (existingCustomer != null) {
@@ -51,6 +53,7 @@ public class Main {
                         entityManager.update(existingCustomer);
                     }
                     entityManager.releaseSavepoint(savepoint);
+
                     // simulate an error to roll back to the savepoint
                     // throw new RuntimeException("Simulating an error");
                 } catch (Exception e) {
@@ -67,9 +70,11 @@ public class Main {
             customerEntityManager.insert(customer);
 
             // find by id
-            Customer foundCustomer = customerEntityManager.find(Customer.class, 1);
+            Customer foundCustomer = customerEntityManager.find(Customer.class, 4);
             if (foundCustomer != null)
                 System.out.println("found customer: " + foundCustomer.getFirstName() + " " + foundCustomer.getLastName());
+            // this will be return from cache
+            Customer checkCache = customerEntityManager.find(Customer.class, 4);
 
             // update an existing customer
             if (foundCustomer != null) {
@@ -77,15 +82,20 @@ public class Main {
                 customerEntityManager.update(foundCustomer);
             }
 
-            // select and print all records
-            customerEntityManager.selectAndPrintAll(Customer.class);
+             // select and print all records
+             customerEntityManager.selectAndPrintAll(Customer.class);
 
+
+            // Shutdown hook to close all connections when the application ends
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    dataSource.closeAllConnections();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }));
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            // return the connection to the pool
-            if (conn != null)
-                dataSource.returnConnection(conn);
         }
     }
 }

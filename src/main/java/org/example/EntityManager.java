@@ -1,5 +1,6 @@
 package org.example;
 
+import javax.sql.DataSource;
 import java.lang.reflect.Field;
 import java.sql.*;
 import java.util.ArrayList;
@@ -8,10 +9,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class EntityManager<T> {
-    private final Connection connection;
+    private CustomDataSource dataSource;
+    private Cache<Integer, T> cache;
 
-    public EntityManager(Connection connection) {
-        this.connection = connection;
+    public EntityManager(CustomDataSource dataSource, Cache<Integer, T> cache) {
+        this.dataSource = dataSource;
+        this.cache = cache;
+    }
+
+    public void setCache(Cache<Integer, T> cache) {
+        this.cache = cache;
     }
 
     // Insert a new entity into the database
@@ -56,16 +63,26 @@ public class EntityManager<T> {
         System.out.println("...\ngenerated sql: " + sql);
 
         // Execute the SQL INSERT statement
-        try (Statement stmt = connection.createStatement()) {
+        try (Connection connection = dataSource.getConnection();
+             Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql.toString());
+
+            System.out.println("...\ninserted " + entityClass.getSimpleName() + " into " + tableName + " table successfully:)");
+            dataSource.returnConnection(connection);
         }
-        System.out.println("...\ninserted " + entityClass.getSimpleName() + " into " + tableName + " table successfully:)");
     }
 
     // Find an entity by its primary key
     public T find(Class<T> entityClass, int primaryKey) throws Exception {
         if (!entityClass.isAnnotationPresent(Entity.class))
             throw new RuntimeException("not an entity class");
+
+        // Check the cache first
+        T cachedEntity = cache.get(primaryKey);
+        if (cachedEntity != null) {
+            System.out.println("Entity found in cache");
+            return cachedEntity;
+        }
 
         Entity entityAnnotation = entityClass.getAnnotation(Entity.class);
         String tableName = entityAnnotation.tableName();
@@ -97,7 +114,8 @@ public class EntityManager<T> {
         System.out.println("generated sql: " + sql);
 
         // Execute the SQL SELECT statement
-        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
             preparedStatement.setObject(1, primaryKey);
 
             try (ResultSet rs = preparedStatement.executeQuery()) {
@@ -110,9 +128,13 @@ public class EntityManager<T> {
                             field.set(entity, rs.getObject(column.name()));
                         }
                     }
+                    // Put the fetched entity in the cache
+                    cache.put(primaryKey, entity);
+
                     return entity;
                 }
             }
+            dataSource.returnConnection(connection);
         }
         return null;
     }
@@ -167,13 +189,18 @@ public class EntityManager<T> {
         System.out.println("generated sql: " + sql);
 
         // Execute the SQL UPDATE statement
-        try (PreparedStatement preparedStatement = connection.prepareStatement(sql.toString())) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql.toString())) {
             for (int i = 0; i < values.size(); i++) {
                 preparedStatement.setObject(i + 1, values.get(i));
             }
             preparedStatement.executeUpdate();
+            System.out.println("...\nupdated " + entityClass.getSimpleName() + " in " + tableName + " table successfully:)");
+
+            // Update the cache with the new entity data
+            cache.put((Integer) primaryKeyValue, entity);
+            dataSource.returnConnection(connection);
         }
-        System.out.println("...\nupdated " + entityClass.getSimpleName() + " in " + tableName + " table successfully:)");
     }
 
     // Create a table for the entity class if it does not exist
@@ -211,10 +238,12 @@ public class EntityManager<T> {
         sql.append(")");
 
         // Execute the SQL CREATE TABLE statement
-        try (Statement stmt = connection.createStatement()) {
+        try (Connection connection = dataSource.getConnection();
+             Statement stmt = connection.createStatement()) {
             stmt.execute(sql.toString());
+            System.out.println("...\ntable " + entityClass.getSimpleName() + " created successfully:)");
+            dataSource.returnConnection(connection);
         }
-        System.out.println("...\ntable " + entityClass.getSimpleName() + " created successfully:)");
     }
 
     // Add a new column to an existing table
@@ -230,10 +259,12 @@ public class EntityManager<T> {
         String sql = "ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnType;
 
         // Execute the SQL ALTER TABLE statement
-        try (Statement stmt = connection.createStatement()) {
+        try (Connection connection = dataSource.getConnection();
+             Statement stmt = connection.createStatement()) {
             stmt.execute(sql);
+            System.out.println("...\ntable " + entityClass.getSimpleName() + " altered successfully:)");
+            dataSource.returnConnection(connection);
         }
-        System.out.println("...\ntable " + entityClass.getSimpleName() + " altered successfully:)");
     }
 
     // Select and print all records from the table corresponding to the entity class
@@ -248,8 +279,8 @@ public class EntityManager<T> {
         System.out.println("\nSelecting and printing all records from " + tableName + " table");
 
         // Execute the SQL SELECT statement and print the results
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        try (Connection connection = dataSource.getConnection();
+             Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 
             // Print column names
             ResultSetMetaData rsmd = rs.getMetaData();
@@ -266,11 +297,13 @@ public class EntityManager<T> {
                 }
                 System.out.println();
             }
+            dataSource.returnConnection(connection);
         }
     }
 
     // Execute a transaction with auto-commit disabled
-    public void executeInTransaction(TransactionCallback<T> callback) {
+    public void executeInTransaction(TransactionCallback<T> callback) throws SQLException {
+        Connection connection = dataSource.getConnection();
         try {
             connection.setAutoCommit(false); // Start transaction
             callback.doInTransaction(this); // Execute callback
@@ -286,16 +319,19 @@ public class EntityManager<T> {
         } finally {
             try {
                 connection.setAutoCommit(true); // Reset auto-commit to true
+                dataSource.returnConnection(connection);
             } catch (SQLException e) {
                 e.printStackTrace();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         }
     }
 
     // Execute a transaction with savepoints to handle partial rollbacks
-    public void executeInTransactionWithSavepoints(TransactionCallback<T> callback) {
+    public void executeInTransactionWithSavepoints(TransactionCallback<T> callback) throws SQLException {
         Savepoint savepoint = null;
-
+        Connection connection = dataSource.getConnection();
         try {
             connection.setAutoCommit(false); // Start transaction
 
@@ -319,27 +355,30 @@ public class EntityManager<T> {
         } finally {
             try {
                 connection.setAutoCommit(true); // Reset auto-commit to true
+                dataSource.returnConnection(connection);
             } catch (SQLException e) {
                 e.printStackTrace();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         }
     }
 
     // Set a savepoint in the transaction
     public Savepoint setSavepoint(String savepointName) throws SQLException {
-        Savepoint savepoint = connection.setSavepoint(savepointName);
+        Savepoint savepoint = dataSource.getConnection().setSavepoint(savepointName);
         System.out.println("savepoint '" + savepointName + "' set.");
         return savepoint;
     }
 
     // Release a savepoint (it cannot be rolled back to once released)
     public void releaseSavepoint(Savepoint savepoint) throws SQLException {
-        connection.releaseSavepoint(savepoint);
+        dataSource.getConnection().releaseSavepoint(savepoint);
         System.out.println("savepoint released.");
     }
 
     // Rollback to a specific savepoint
     public void rollback(Savepoint savepoint) throws SQLException {
-        connection.rollback(savepoint);
+        dataSource.getConnection().rollback(savepoint);
     }
 }
